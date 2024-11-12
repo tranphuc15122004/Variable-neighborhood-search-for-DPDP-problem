@@ -1,5 +1,7 @@
 import csv
 import json
+import string
+from typing import Dict
 from Object import Factory, Node, Vehicle, VehicleInfo, OrderItem, Destination
 import traceback
 import copy
@@ -44,7 +46,7 @@ def read_json():
     id_to_vehicle = read_vehicleinfor(id_allorder)
     return id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item , id_allorder
 
-def read_unlocated_item():
+def read_unlocated_item() -> Dict[string , OrderItem]:
     path = 'benchmark/unlocated_item.json'
     id_to_unlocated_item = {}
     with open(f"./{path}" , mode= 'r' , encoding= 'utf-8-sig') as file:
@@ -67,7 +69,7 @@ def read_unlocated_item():
             id_to_unlocated_item[id] = temp
     return id_to_unlocated_item
         
-def read_ongoing_item():
+def read_ongoing_item() -> Dict[string , OrderItem]:
     path = 'benchmark/ongoing_item.json'
     id_to_ongoing_item = {}
     with open(f"./{path}" , mode= 'r' , encoding= 'utf-8-sig') as file:
@@ -88,7 +90,7 @@ def read_ongoing_item():
             id_to_ongoing_item[id] = temp
     return id_to_ongoing_item
 
-def read_vehicleinfor(id_allorder: dict['OrderItem']):
+def read_vehicleinfor(id_allorder: Dict[string ,OrderItem]) -> Dict[string , Vehicle]:
     path  = 'benchmark/vehicle.json'
     id_to_vehicle = {}
     with open(f"./{path}" , mode= 'r' , encoding= 'utf-8-sig') as file:

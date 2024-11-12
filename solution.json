@@ -1,8 +1,0 @@
-{
-    "no": "002",
-    "finalCost": 5678.90,
-    "onvehicle_order_items": "O001 O002 O003",
-    "unallocated_order_items": "O004 O005 O006 O007 O008 O009",
-    "route_after": "V001: [d_1-O001 d_1-O002 p_1-O003] V002: [p_1-O004 d_2-O005] V003: [d_1-O006 p_1-O007] V004: [d_1-O008 p_1-O009]",
-    "completeOrderItems": ["O001", "O002", "O003"]
-}
