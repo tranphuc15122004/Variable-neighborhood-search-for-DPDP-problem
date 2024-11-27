@@ -1,13 +1,16 @@
 import json
 import os
 import string
+import sys
 from typing import Dict
 from Read_input import Input
 from Object import Factory, Node, Vehicle, VehicleInfo, OrderItem, Destination
 import copy
 import numpy as np
+from constant import APPROACHING_DOCK_TIME , Delta , debugPeriod , SLACK_TIME_THRESHOLD 
+import time
 
-from local_search import create_Pickup_Delivery_nodes, dispatch_nodePair
+from local_search import create_Pickup_Delivery_nodes, dispatch_nodePair , inter_couple_exchange , block_exchange , block_relocate , multi_pd_group_relocate , improve_ci_path_by_2_opt, cost
 
 solution_json_path = "./solution.json"
 delta_t = "0000-0010"
@@ -108,7 +111,7 @@ def Restore(vehicleid_to_plan: dict, id_to_ongoing_items: dict, id_to_unlocated_
     return new_order_itemIDs , complete_order_itemIDs
 
 
-def dispatch_new_orders(vehicleid_to_plan: Dict[str , list[Node]] ,  id_to_factory:dict , route_map: dict ,  id_to_vehicle: Dict[str , Vehicle] , id_to_unlocated_items:Dict[str , OrderItem] ,  id_to_ongoing_items: dict , id_to_allorder:dict , new_order_itemIDs: list[str]):
+def dispatch_new_orders(vehicleid_to_plan: Dict[str , list[Node]] ,  id_to_factory:Dict[str , Factory] , route_map: Dict[tuple , tuple] ,  id_to_vehicle: Dict[str , Vehicle] , id_to_unlocated_items:Dict[str , OrderItem] ,  id_to_ongoing_items: dict , id_to_allorder:dict , new_order_itemIDs: list[str]):
     if new_order_itemIDs:
         # Mapping orderID to its list of items 
         # str - list[OrderItem]
@@ -135,14 +138,122 @@ def dispatch_new_orders(vehicleid_to_plan: Dict[str , list[Node]] ,  id_to_facto
                 tmp_demand = 0
                 tmp_itemList: list[OrderItem] = []
                 for item in orderID_items:
-                    if tmp_demand + item.demand > capacity:
+                    if (tmp_demand + item.demand) > capacity:
                         node_list: list[Node] = create_Pickup_Delivery_nodes(copy.deepcopy(tmp_itemList) , id_to_factory)
-                        dispatch_nodePair(node_list , id_to_vehicle , vehicleid_to_plan)
+                        isExhausive , bestInsertVehicleID, bestInsertPosI, bestInsertPosJ , bestNodeList = dispatch_nodePair(node_list , id_to_vehicle , vehicleid_to_plan , route_map)
+                        
+                        route_node_list = vehicleid_to_plan.get(bestInsertVehicleID)
+
+                        if isExhausive:
+                            route_node_list = bestNodeList[:]
+                        else:
+                            if route_node_list is None:
+                                route_node_list = []
+                            
+                            new_order_pickup_node = node_list[0]
+                            new_order_delivery_node = node_list[1]
+                            
+                            route_node_list.insert(bestInsertPosI, new_order_pickup_node)
+                            route_node_list.insert(bestInsertPosJ, new_order_delivery_node)
+
+                        vehicleid_to_plan[bestInsertVehicleID] = route_node_list
+
                         
                         tmp_itemList.clear()
                         tmp_demand = 0
                     tmp_itemList.append(item)
-                    tmp_demand += item.demand
+                    tmp_demand += item.demand 
+
+                if len(tmp_itemList) > 0:
+                    node_list: list[Node] = create_Pickup_Delivery_nodes(copy.deepcopy(tmp_itemList) , id_to_factory)
+                    isExhausive , bestInsertVehicleID, bestInsertPosI, bestInsertPosJ , bestNodeList =  dispatch_nodePair(node_list , id_to_vehicle , vehicleid_to_plan, route_map)
+                    
+                    if isExhausive:
+                        route_node_list = bestNodeList[:]
+                    else:
+                        if route_node_list is None:
+                            route_node_list = []
+                        
+                        new_order_pickup_node = node_list[0]
+                        new_order_delivery_node = node_list[1]
+                        
+                        route_node_list.insert(bestInsertPosI, new_order_pickup_node)
+                        route_node_list.insert(bestInsertPosJ, new_order_delivery_node)
+
+                    vehicleid_to_plan[bestInsertVehicleID] = route_node_list
+            else:
+                node_list: list[Node] = create_Pickup_Delivery_nodes(copy.deepcopy(tmp_itemList) , id_to_factory)
+                isExhausive , bestInsertVehicleID, bestInsertPosI, bestInsertPosJ , bestNodeList = dispatch_nodePair(node_list , id_to_vehicle , vehicleid_to_plan , route_map)
+                
+                if isExhausive:
+                    route_node_list = bestNodeList[:]
+                else:
+                    if route_node_list is None:
+                        route_node_list = []
+                    
+                    new_order_pickup_node = node_list[0]
+                    new_order_delivery_node = node_list[1]
+                    
+                    route_node_list.insert(bestInsertPosI, new_order_pickup_node)
+                    route_node_list.insert(bestInsertPosJ, new_order_delivery_node)
+
+                vehicleid_to_plan[bestInsertVehicleID] = route_node_list
+    # Ok
+
+
+def variable_neighbourhood_search(begintime: float):
+    n1, n2, n3, n4, n5 = 0, 0, 0, 0, 0
+    endtime = time.time()
+    used_time = endtime - begintime
+
+    while True:
+        if inter_couple_exchange():
+            n1 += 1
+            continue
+
+        endtime = time.time()
+        used_time = endtime - begintime
+        if used_time > 9 * 60:
+            print("TimeOut!!", file=sys.stderr)
+            break
+
+        if block_exchange():
+            n2 += 1
+            continue
+
+        endtime = time.time()
+        used_time = endtime - begintime
+        if used_time > 9 * 60:
+            print("TimeOut!!", file=sys.stderr)
+            break
+
+        if block_relocate():
+            n3 += 1
+            continue
+
+        endtime = time.time()
+        used_time = endtime - begintime
+        if used_time > 9 * 60:
+            print("TimeOut!!", file=sys.stderr)
+            break
+
+        if multi_pd_group_relocate():
+            n4 += 1
+        else:
+            if not improve_ci_path_by_2_opt():
+                break
+            n5 = 0
+
+        endtime = time.time()
+        used_time = endtime - begintime
+        if used_time > 9 * 60:
+            print("TimeOut!!", file=sys.stderr)
+            break
+
+    print(
+        f"PDPairExchange:{n1}; BlockExchange:{n2}; BlockRelocate:{n3}; mPDG:{n4}; usedTime:{used_time:.2f} seconds; cost:{cost():.2f}",
+        file=sys.stderr
+    )
 
 
 def main():
@@ -152,11 +263,15 @@ def main():
     vehicleid_to_plan: Dict[str , list[Node]]= {}
     vehicleid_to_destination = {}
     
+    begintime = time.time()
+    
     # Mảng các string
     new_order_itemIDs , complete_order_itemIDs = Restore(vehicleid_to_plan , id_to_ongoing_items, id_to_unlocated_items  , id_to_vehicle , id_to_factory ,id_to_allorder)
     
     dispatch_new_orders(vehicleid_to_plan= vehicleid_to_plan , id_to_factory= id_to_factory, route_map= route_map , id_to_vehicle= id_to_vehicle,
                         id_to_unlocated_items= id_to_unlocated_items , id_to_ongoing_items= id_to_ongoing_items , id_to_allorder= id_to_allorder , new_order_itemIDs= new_order_itemIDs)
+    
+    variable_neighbourhood_search(begintime)
 
 
 if __name__ == '__main__':

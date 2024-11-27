@@ -7,7 +7,7 @@ import traceback
 import copy
 
 
-def read_input_Factory_CSV():
+def read_input_Factory_CSV() -> Dict[str , Factory]:
     file_path = 'benchmark/factory.csv'
     id_to_vehicle = {}
     with open(file_path, mode='r', encoding='utf-8-sig') as file:
@@ -21,7 +21,7 @@ def read_input_Factory_CSV():
     return id_to_vehicle  
 
 
-def read_input_Routemap_CSV():
+def read_input_Routemap_CSV() -> Dict[tuple , tuple]:
     file_path = 'benchmark/route.csv'
     Route_map = {}
     with open(file_path , mode= 'r' , encoding= 'utf-8-sig') as file:
@@ -34,19 +34,19 @@ def read_input_Routemap_CSV():
             Route_map[(u, v)] = (dis, t)
     return Route_map
 
-def read_csv() :
+def read_csv() -> tuple[Dict[str, Factory], Dict[tuple, tuple]]:
     return read_input_Factory_CSV() , read_input_Routemap_CSV()
 
-def read_json():
+def read_json() -> tuple[Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem]]:
     id_to_unlocated_item = read_unlocated_item()
     id_to_ongoing_item = read_ongoing_item()
-    id_allorder = {}
+    id_allorder : Dict[str , OrderItem] = {}
     id_allorder.update(id_to_unlocated_item)
     id_allorder.update(id_to_ongoing_item)
     id_to_vehicle = read_vehicleinfor(id_allorder)
     return id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item , id_allorder
 
-def read_unlocated_item() -> Dict[string , OrderItem]:
+def read_unlocated_item() -> Dict[str , OrderItem]:
     path = 'benchmark/unlocated_item.json'
     id_to_unlocated_item = {}
     with open(f"./{path}" , mode= 'r' , encoding= 'utf-8-sig') as file:
@@ -69,7 +69,7 @@ def read_unlocated_item() -> Dict[string , OrderItem]:
             id_to_unlocated_item[id] = temp
     return id_to_unlocated_item
         
-def read_ongoing_item() -> Dict[string , OrderItem]:
+def read_ongoing_item() -> Dict[str , OrderItem]:
     path = 'benchmark/ongoing_item.json'
     id_to_ongoing_item = {}
     with open(f"./{path}" , mode= 'r' , encoding= 'utf-8-sig') as file:
@@ -90,7 +90,7 @@ def read_ongoing_item() -> Dict[string , OrderItem]:
             id_to_ongoing_item[id] = temp
     return id_to_ongoing_item
 
-def read_vehicleinfor(id_allorder: Dict[string ,OrderItem]) -> Dict[string , Vehicle]:
+def read_vehicleinfor(id_allorder: Dict[str ,OrderItem]) -> Dict[str , Vehicle]:
     path  = 'benchmark/vehicle.json'
     id_to_vehicle = {}
     with open(f"./{path}" , mode= 'r' , encoding= 'utf-8-sig') as file:
@@ -140,7 +140,7 @@ def read_vehicleinfor(id_allorder: Dict[string ,OrderItem]) -> Dict[string , Veh
             id_to_vehicle[id] = temp
     return id_to_vehicle
 
-def Input():
+def Input() ->tuple[Dict[str, Factory], Dict[tuple, tuple] ,Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem] ]:
         id_to_factory , route_map =  read_csv()
         id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item  , id_allorder = read_json()
         return id_to_factory , route_map ,  id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item , id_allorder
