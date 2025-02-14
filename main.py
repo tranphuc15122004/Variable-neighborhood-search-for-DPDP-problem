@@ -2,7 +2,7 @@ import json
 import os
 import string
 import sys
-from typing import Dict
+from typing import Dict , List, Optional
 from Read_input import Input
 from Object import Factory, Node, Vehicle, VehicleInfo, OrderItem, Destination
 import copy
@@ -10,25 +10,139 @@ import numpy as np
 from constant import APPROACHING_DOCK_TIME , Delta , debugPeriod , SLACK_TIME_THRESHOLD 
 import time
 
-from local_search import create_Pickup_Delivery_nodes, dispatch_nodePair , inter_couple_exchange , block_exchange , block_relocate , multi_pd_group_relocate , improve_ci_path_by_2_opt, cost
+from local_search import create_Pickup_Delivery_nodes, dispatch_nodePair, cost
+from local_search2 import inter_couple_exchange , block_exchange , block_relocate , multi_pd_group_relocate , improve_ci_path_by_2_opt
 
 solution_json_path = "./solution.json"
 delta_t = "0000-0010"
+before_cost = 0.0
+completeOrderItems: str = ""
+newOrderItems: str = ""
+onVehicleOrderItems : str = ""
+unallocatedOrderItems: str = ""
+routeBefore: str = ""
+
+
+def restore_scene_with_single_node(vehicleid_to_plan: Dict[str , List[Node]], id_to_ongoing_items: Dict[str , OrderItem], id_to_unlocated_items: Dict[str , OrderItem], id_to_vehicle: Dict[str , Vehicle] , id_to_factory: Dict[str , Factory], id_to_allorder: Dict[str , OrderItem]) -> List[str]:
+    global before_cost, delta_t, solution_json_path , completeOrderItems , newOrderItems , onVehicleOrderItems , unallocatedOrderItems , routeBefore
+
+    vehicleid_to_plan = {vehicle_id: None for vehicle_id in id_to_vehicle}
+    
+    for key in id_to_ongoing_items:
+        onVehicleOrderItems += f"{key} "
+    onVehicleOrderItems.strip()
+    
+    for key in id_to_unlocated_items:
+        unallocatedOrderItems += f"{key} "
+    unallocatedOrderItems.strip()
+    
+    if os.path.exists(solution_json_path) and os.path.getsize(solution_json_path) > 0:
+        try:
+            with open(solution_json_path , 'r') as file:
+                before_solution = json.loads(file)
+                no = int(before_solution.get('no', 0))
+                f = (no + 1) * 10
+                t = (no + 1) * 10 + 10
+                global delta_t
+                delta_t = f"{f:04d}-{t:04d}"
+                routeBefore = before_solution.get("route_after", "")
+                splited_routeBefore : List[str] = routeBefore.split("V")
+                
+                last_on_vehicle_items: List[str] = before_solution.get("onvehicle_order_items", "").split(" ")
+                curr_on_vehicle_items : List[str] = onVehicleOrderItems.split(" ")
+                for key in last_on_vehicle_items:
+                    if key not in curr_on_vehicle_items:
+                        completeOrderItems += f"{key} "
+                completeOrderItems.strip()
+                completeItemsArray = completeOrderItems.split(" ")
+                
+                last_unallocated_items : List[str] = before_solution.get("unallocated_order_items", "").split(" ")
+                curr_unallocated_items : List[str] = unallocatedOrderItems.split(" ")
+                for key in last_on_vehicle_items:
+                    if key not in curr_on_vehicle_items:
+                        newOrderItems += f"{key} "
+                newOrderItems.strip()
+                
+                for route in splited_routeBefore:
+                    route.strip()
+                    str_len : int = len(route.split(':')[1])
+                    numstr = route.split(":")[0]
+                    vehicleID = "V_" + numstr[1:]
+                    if str_len < 3: 
+                        vehicleid_to_plan[vehicleID] = None
+                        continue
+                    
+                    route_nodes_str = route.split(":")[1]
+                    route_nodes = route_nodes_str[1:len(route_nodes_str) - 1].split(" ")
+                    node_list : List[str] = list(route_nodes)
+                    
+                    node_list = [
+                        node for node in node_list
+                        if not (
+                            (node.startswith("d") and node.split("_")[1] in completeItemsArray) or
+                            (node.startswith("p") and node.split("_")[1] in curr_on_vehicle_items)
+                        )
+                    ]
+                    
+                    if len(node_list) > 0:
+                        planroute : List[Node] = []
+                        for node in node_list:
+                            deliveryItemList : List[OrderItem] = []
+                            pickupItemList : List[OrderItem] = []
+                            temp : OrderItem = None
+                            op = node[0][0:1]
+                            opNumstr = node.split("_")
+                            opItemNum = int(opNumstr[0][1 , len(opNumstr)])
+                            orderItemID = node.split("_")[1]
+                            idEndNumber = int(orderItemID.split("-")[1])
+                            
+                            if op == 'd':
+                                for i in range(opItemNum):
+                                    temp = id_to_allorder[orderItemID]
+                                    deliveryItemList.append(temp)
+                                    idEndNumber -= 1
+                                    orderItemID =  orderItemID.split("-")[0] + "-" + idEndNumber
+                            else:
+                                for i in range(opItemNum):
+                                    temp = id_to_allorder[orderItemID]
+                                    pickupItemList.append(temp)
+                                    idEndNumber -= 1
+                                    orderItemID =  orderItemID.split("-")[0] + "-" + idEndNumber
+                                    
+                            factoryID = ""
+                            if op == 'd':
+                                factoryID = temp.delivery_factory_id
+                            else:
+                                factoryID = temp.pickup_factory_id
+                            factory = id_to_factory[factoryID]
+                            
+                            planroute.append(Node(factoryID , deliveryItemList , pickupItemList ,None ,None , factory.lng , factory.lat))
+                        if len(planroute) > 0:
+                            vehicleid_to_plan[vehicleID] = planroute
+        except Exception as e:
+            print(f"Error: {e}" , file= sys.stderr)
+    else:
+        newOrderItems  = unallocatedOrderItems
+        completeOrderItems = ""
+        routeBefore = ""
+        delta_t = "0000-0010"
+    
+    new_order_itemIDs = newOrderItems.split(" ")
+    return new_order_itemIDs
 
 
 ## Cần có file JSON solution để debug lại
 # CÓ vẻ đúng rồi
-def Restore(vehicleid_to_plan: dict, id_to_ongoing_items: dict, id_to_unlocated_items: dict, id_to_vehicle: dict , id_to_factory:dict, id_to_allorder: dict):
+def Restore(vehicleid_to_plan: Dict[str , List[Node]], id_to_ongoing_items: Dict[str , OrderItem], id_to_unlocated_items: Dict[str , OrderItem], id_to_vehicle: Dict[str , Vehicle] , id_to_factory: Dict[str , Factory], id_to_allorder: Dict[str , OrderItem]):
     vehicleid_to_plan = {vehicle_id: None for vehicle_id in id_to_vehicle}
     route_before = ""
     complete_order_itemIDs = []
     new_order_itemIDs = list(id_to_unlocated_items.keys())
-    
 
     global solution_json_path
     if os.path.exists(solution_json_path) and os.path.getsize(solution_json_path) > 0:
         with open(solution_json_path, 'r') as file:
-            previous_sol = json.load(file)
+            previous_sol  = json.load(file)
             no = int(previous_sol.get('no', 0))
             f = (no + 1) * 10
             t = (no + 1) * 10 + 10
@@ -157,7 +271,6 @@ def dispatch_new_orders(vehicleid_to_plan: Dict[str , list[Node]] ,  id_to_facto
                             route_node_list.insert(bestInsertPosJ, new_order_delivery_node)
 
                         vehicleid_to_plan[bestInsertVehicleID] = route_node_list
-
                         
                         tmp_itemList.clear()
                         tmp_demand = 0
@@ -201,7 +314,7 @@ def dispatch_new_orders(vehicleid_to_plan: Dict[str , list[Node]] ,  id_to_facto
     # Ok
 
 
-def variable_neighbourhood_search(begintime: float):
+def variable_neighbourhood_search(begintime: float , vehicleid_to_plan: Dict[str , list[Node]] ,  id_to_factory:Dict[str , Factory] , route_map: Dict[tuple , tuple] ,  id_to_vehicle: Dict[str , Vehicle] , id_to_unlocated_items:Dict[str , OrderItem] ,  id_to_ongoing_items: dict , id_to_allorder:dict , new_order_itemIDs: list[str]):
     n1, n2, n3, n4, n5 = 0, 0, 0, 0, 0
     endtime = time.time()
     used_time = endtime - begintime
@@ -239,9 +352,9 @@ def variable_neighbourhood_search(begintime: float):
 
         if multi_pd_group_relocate():
             n4 += 1
+        elif not improve_ci_path_by_2_opt():
+            break
         else:
-            if not improve_ci_path_by_2_opt():
-                break
             n5 = 0
 
         endtime = time.time()
@@ -257,21 +370,23 @@ def variable_neighbourhood_search(begintime: float):
 
 
 def main():
+    global before_cost, delta_t, solution_json_path , completeOrderItems , newOrderItems , onVehicleOrderItems , unallocatedOrderItems , routeBefore
+    
     # Tất cả đều là Dict
     id_to_factory , route_map ,  id_to_vehicle , id_to_unlocated_items ,  id_to_ongoing_items , id_to_allorder = Input()
     # Dict
-    vehicleid_to_plan: Dict[str , list[Node]]= {}
+    vehicleid_to_plan: Dict[str , List[Node]]= {}
     vehicleid_to_destination = {}
     
     begintime = time.time()
     
     # Mảng các string
-    new_order_itemIDs , complete_order_itemIDs = Restore(vehicleid_to_plan , id_to_ongoing_items, id_to_unlocated_items  , id_to_vehicle , id_to_factory ,id_to_allorder)
+    new_order_itemIDs = restore_scene_with_single_node(vehicleid_to_plan , id_to_ongoing_items, id_to_unlocated_items  , id_to_vehicle , id_to_factory ,id_to_allorder)
     
     dispatch_new_orders(vehicleid_to_plan= vehicleid_to_plan , id_to_factory= id_to_factory, route_map= route_map , id_to_vehicle= id_to_vehicle,
                         id_to_unlocated_items= id_to_unlocated_items , id_to_ongoing_items= id_to_ongoing_items , id_to_allorder= id_to_allorder , new_order_itemIDs= new_order_itemIDs)
     
-    variable_neighbourhood_search(begintime)
+    variable_neighbourhood_search(begintime , vehicleid_to_plan , id_to_factory , route_map , id_to_vehicle , id_to_unlocated_items , id_to_ongoing_items , id_to_allorder)
 
 
 if __name__ == '__main__':

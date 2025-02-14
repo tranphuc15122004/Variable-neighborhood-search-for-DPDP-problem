@@ -1,6 +1,7 @@
 import csv
 import json
 import string
+import sys
 from typing import Dict
 from Object import Factory, Node, Vehicle, VehicleInfo, OrderItem, Destination
 import traceback
@@ -9,32 +10,42 @@ import copy
 
 def read_input_Factory_CSV() -> Dict[str , Factory]:
     file_path = 'benchmark/factory.csv'
-    id_to_vehicle = {}
-    with open(file_path, mode='r', encoding='utf-8-sig') as file:
-        csv_reader = csv.reader(file)
-        for row in csv_reader:
-            factory_id = row[0]
-            lng = float(row[1])
-            lat = float(row[2])
-            dock_num = int(row[3])
-            id_to_vehicle[factory_id] = Factory(factory_id, lng, lat, dock_num)
-    return id_to_vehicle  
+    id2factory_map: Dict[str, Factory] = {}
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            next(file)  # Bỏ qua dòng đầu tiên
+            for line in file:
+                item = line.strip().split(",")
+                factory_id = item[0]
+                lng = float(item[1])
+                lat = float(item[2])
+                dock_num = int(item[3])
+                factory = Factory(factory_id, lng, lat, dock_num)
+                if factory_id not in id2factory_map:
+                    id2factory_map[factory_id] = factory
+    except Exception as e:
+        print(f"Error: {e}")
+    return id2factory_map
 
 
-def read_input_Routemap_CSV() -> Dict[tuple , tuple]:
+def read_input_Routemap_CSV() -> Dict[tuple[str , str] , tuple[str , str]]:
     file_path = 'benchmark/route.csv'
-    Route_map = {}
-    with open(file_path , mode= 'r' , encoding= 'utf-8-sig') as file:
-        csv_reader = csv.reader(file)
-        for row in csv_reader:
-            u = row[1]
-            v = row[2]
-            dis = row[3]
-            t = row[4]
-            Route_map[(u, v)] = (dis, t)
+    Route_map : Dict[tuple[str , str] , tuple[str , str]] = {}
+    try:
+        with open(file_path , mode= 'r' , encoding= 'utf-8-sig') as file:
+            csv_reader = csv.reader(file)
+            for row in csv_reader:
+                u : str = row[1]
+                v :str = row[2]
+                if (u , v) not in Route_map:
+                    dis : str = row[3]
+                    t : str = row[4]
+                    Route_map[(u, v)] = (dis, t)
+    except Exception as e:
+        print (f"Error: {e}" , file= sys.stderr)
     return Route_map
 
-def read_csv() -> tuple[Dict[str, Factory], Dict[tuple, tuple]]:
+def read_csv() -> tuple[Dict[str, Factory], Dict[tuple[str , str], tuple[str , str]]]:
     return read_input_Factory_CSV() , read_input_Routemap_CSV()
 
 def read_json() -> tuple[Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem]]:
@@ -140,7 +151,7 @@ def read_vehicleinfor(id_allorder: Dict[str ,OrderItem]) -> Dict[str , Vehicle]:
             id_to_vehicle[id] = temp
     return id_to_vehicle
 
-def Input() ->tuple[Dict[str, Factory], Dict[tuple, tuple] ,Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem] ]:
+def Input() ->tuple[Dict[str, Factory], Dict[tuple[str , str], tuple[str , str]] ,Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem] ]:
         id_to_factory , route_map =  read_csv()
         id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item  , id_allorder = read_json()
         return id_to_factory , route_map ,  id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item , id_allorder

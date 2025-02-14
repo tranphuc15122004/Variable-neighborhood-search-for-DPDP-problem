@@ -1,5 +1,5 @@
 class OrderItem:
-    def __init__(self, id: str, type: str, order_id: str, demand: float, pickup_factory_id: str, delivery_factory_id: str, creation_time, committed_completion_time, load_time: int, unload_time: int, delivery_state: int):
+    def __init__(self, id: str = '', type: str = '', order_id: str = '', demand: float = 0.0, pickup_factory_id: str = '', delivery_factory_id: str = '', creation_time=None, committed_completion_time=None, load_time: int = 0, unload_time: int = 0, delivery_state: int = 0):
         self.id = id
         self.type = type
         self.order_id = order_id

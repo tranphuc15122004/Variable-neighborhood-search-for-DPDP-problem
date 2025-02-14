@@ -1,8 +1,10 @@
+from collections import deque
 import json
 import os
 import string
 import sys
-from typing import Dict
+import math
+from typing import Dict , List, Optional
 from Read_input import Input
 from Object import Factory, Node, Vehicle, VehicleInfo, OrderItem, Destination
 import copy
@@ -46,276 +48,6 @@ def create_Pickup_Delivery_nodes(tmp_itemList: list[OrderItem] , id_to_factory: 
     res.append(pickup_node)
     res.append(delivery_node)
     return res
-
-
-def isFeasible (tempRouteNodeList: list[Node] , carrying_Items: list [OrderItem] , capacity: float) -> bool:
-    unload_item_list = [OrderItem]
-    
-    # Copy carrying_items in reverse order
-    if carrying_Items and len(carrying_Items) > 0:
-        for i in range(len(carrying_Items) - 1, -1, -1):
-            unload_item_list.append(carrying_Items[i])
-    
-    for node in tempRouteNodeList:
-        delivery_items = node.delivery_item_list
-        pickup_items = node.pickup_item_list
-        
-        # Process delivery items
-        if delivery_items and len(delivery_items) > 0:
-            for order_item in delivery_items:
-                if not unload_item_list or not unload_item_list[0] or unload_item_list[0].id  != order_item.id:
-                    print("Violate FILO", file=sys.stderr)
-                    return False
-                unload_item_list.pop(0)
-        
-        # Process pickup items
-        if pickup_items and len(pickup_items) > 0:
-            for order_item in pickup_items:
-                unload_item_list.insert(0, order_item)
-    
-    if unload_item_list:
-        print("Violate FILO", file=sys.stderr)
-        return False
-
-    left_capacity = capacity
-    if carrying_Items:
-        for order_item in carrying_Items:
-            left_capacity -= order_item.demand
-    
-    for node in tempRouteNodeList:
-        delivery_items = node.delivery_item_list
-        pickup_items = node.pickup_item_list
-
-        # Update capacity for delivery items
-        if delivery_items:
-            for order_item in delivery_items:
-                left_capacity += order_item.demand
-                if left_capacity > capacity:
-                    return False
-        
-        # Update capacity for pickup items
-        if pickup_items:
-            for order_item in pickup_items:
-                left_capacity -= order_item.demand
-                if left_capacity < 0:
-                    return False
-    
-    return (not unload_item_list)
-
-def cost(tempRouteNodeList: list[Node] ,  vehicle: Vehicle , id_to_vehicle: Dict[str , Vehicle] , route_map : Dict[tuple , tuple] , vehicleid_to_plan: Dict[str, list[Node]]) -> float:
-    curFactoryID = vehicle.cur_factory_id
-    driving_distance = 0
-    overTime_sum = 0
-    F = 0.0
-    capacity = vehicle.board_capacity
-    
-    carrying_Items = []
-    if vehicle.des is not None:
-        carrying_Items = vehicle.carrying_items
-    if len(tempRouteNodeList) > 0 and isFeasible(tempRouteNodeList , carrying_Items , capacity) == False:
-        return float('inf')
-    docktable: Dict[str, list] = {}
-    n = 0
-    vehicle_Num = len(id_to_vehicle)
-    index = 0
-    curr_Node = [0] * vehicle_Num
-    curr_Time = [0] * vehicle_Num
-    leaveLastNodeTime = [0] * vehicle_Num
-    nNode = [0] * vehicle_Num
-    
-    for vehicleID , other_vehicle in id_to_vehicle.items():
-        distance = 0
-        time = 0
-        
-        if other_vehicle.cur_factory_id and len(other_vehicle.cur_factory_id) > 0:
-            if other_vehicle.leave_time_at_current_factory > other_vehicle.gps_update_time:
-                tw = [other_vehicle.arrive_time_at_current_factory, other_vehicle.leave_time_at_current_factory]
-                tw_list = docktable.get(other_vehicle.cur_factory_id, [])
-                tw_list.append(tw)
-                docktable[other_vehicle.cur_factory_id] = tw_list
-            
-            leaveLastNodeTime[index] = other_vehicle.leave_time_at_current_factory
-        else:
-            leaveLastNodeTime[index] = other_vehicle.gps_update_time
-
-        if vehicleID == vehicle.id:
-            if not tempRouteNodeList or len(tempRouteNodeList) == 0:
-                curr_Node[index] = float('inf')
-                curr_Time[index] = float('inf')
-                nNode[index] = 0
-            else:
-                curr_Node[index] = 0
-                nNode[index] = len(tempRouteNodeList)
-
-                if vehicle.des is None:
-                    if vehicle.cur_factory_id == "":
-                        print("Error: cur factory have no value", file=sys.stderr)
-
-                    if len(tempRouteNodeList) == 0:
-                        print("Error: tempRouteNodeList have no length", file=sys.stderr)
-
-                    if vehicle.cur_factory_id == tempRouteNodeList[0].id:
-                        curr_Node[index] = vehicle.leave_time_at_current_factory
-                    else:
-                        dis_and_time = route_map[(vehicle.cur_factory_id , tempRouteNodeList[0].id)]
-                    
-                        if dis_and_time:
-                            distance = float(dis_and_time[0])
-                            time = int(dis_and_time[1])
-                            curr_Time[index] = vehicle.leave_time_at_current_factory + time
-                            driving_distance += distance
-                else:
-                    if curFactoryID and len(curFactoryID) > 0:
-                        if curFactoryID != tempRouteNodeList[0].id:
-                            curr_Time[index] = vehicle.leave_time_at_current_factory
-                            dis_and_time= route_map[(curFactoryID ,tempRouteNodeList[0].id)]
-                            
-                            if dis_and_time: 
-                                distance = float(dis_and_time[0])
-                                time = int(dis_and_time[1])
-                                driving_distance += distance
-                                curr_Time[index] += time
-                        else:
-                            curr_Time[index] = vehicle.leave_time_at_current_factory
-                    else:
-                        curr_Time[index] = vehicle.des.arrive_time
-
-                n += 1
-        elif vehicleid_to_plan[vehicleID] and len(vehicleid_to_plan[vehicleID]) > 0:
-            curr_Node[index] = 0
-            nNode[index] = len(vehicleid_to_plan[vehicleID])
-
-            if other_vehicle.des is None:
-                if other_vehicle.cur_factory_id == vehicleid_to_plan[vehicleID][0].id:
-                    curr_Node[index] = other_vehicle.leave_time_at_current_factory
-                else:
-                    dis_and_time = route_map[(other_vehicle.cur_factory_id , vehicleid_to_plan[vehicleID][0].id)]
-                    if not dis_and_time:
-                        print("Error: no distance", file=sys.stderr)
-                    else:
-                        distance = float(dis_and_time[0])
-                        time = int(dis_and_time[1])
-                        curr_Time[index] = other_vehicle.leave_time_at_current_factory + time
-                        driving_distance += distance
-            else:
-                if other_vehicle.cur_factory_id and len(other_vehicle.cur_factory_id) > 0:
-                    if other_vehicle.cur_factory_id != vehicleid_to_plan[vehicleID][0].id:
-                        curr_Time[index] = other_vehicle.leave_time_at_current_factory
-                        dis_and_time = route_map[(other_vehicle.cur_factory_id , vehicleid_to_plan[vehicleID][0].id)]
-
-                        if dis_and_time:
-                            distance = float(dis_and_time[0])
-                            time = int(dis_and_time[1])
-                            curr_Time[index] += time
-                            driving_distance += distance
-                    else:
-                        curr_Time[index] = other_vehicle.leave_time_at_current_factory
-                else:
-                    curr_Time[index] = other_vehicle.des.arrive_time
-
-            n += 1
-        else:
-            curr_Node[index] = float('inf')
-            curr_Time[index] = float('inf')
-            nNode[index] = 0
-
-        index += 1
-        
-    #flag = False
-
-    while n > 0:
-        minT = sys.maxsize
-        minT2VehicleIndex = 0
-        tTrue = minT
-        idx = 0
-
-        for i in range(vehicle_Num):
-            if curr_Time[i] < minT:
-                minT = curr_Time[i]
-                minT2VehicleIndex = i
-
-        minT2VehicleId = f"V_{minT2VehicleIndex + 1}"
-
-        if minT2VehicleId == vehicle.id:
-            minTNodeList = tempRouteNodeList
-        else:
-            minTNodeList = vehicleid_to_plan[minT2VehicleId]
-
-        minTNode = minTNodeList[curr_Node[minT2VehicleIndex]]
-
-        if minTNode.delivery_item_list:
-            beforeOrderId = ""
-            for orderItem in minTNode.delivery_item_list:
-                nextOrderId = orderItem.order_id
-                if beforeOrderId != nextOrderId:
-                    commitCompleteTime = orderItem.committed_completion_time
-                    overTime_sum += max(0, curr_Time[minT2VehicleIndex] - commitCompleteTime)
-                beforeOrderId = nextOrderId
-
-        usedEndTime = []
-
-        timeSlots = docktable.get(minTNode.id , [])
-        newTimeSlots = []
-        for timeSlot in timeSlots:
-            if timeSlot[1] <= minT:
-                continue  # Bỏ qua phần tử
-            elif timeSlot[0] <= minT < timeSlot[1]:
-                usedEndTime.append(timeSlot[1])
-            else:
-                print("------------ timeslot.start > minT --------------")
-            newTimeSlots.append(timeSlot)
-        timeSlots = newTimeSlots
-
-
-        if len(usedEndTime) < 6:
-            tTrue = minT
-        else:
-            #flag = True
-            idx = len(usedEndTime) - 6
-            usedEndTime.sort()
-            tTrue = usedEndTime[idx]
-
-        #isSameAddress = False
-        serviceTime = minTNodeList[curr_Node[minT2VehicleIndex]].service_time
-        curFactoryId = minTNodeList[curr_Node[minT2VehicleIndex]].id
-        curr_Node[minT2VehicleIndex] += 1
-
-        while (curr_Node[minT2VehicleIndex] < nNode[minT2VehicleIndex] and 
-            curFactoryId == minTNodeList[curr_Node[minT2VehicleIndex]].id):
-            nextNode = minTNodeList[curr_Node[minT2VehicleIndex]]
-            if nextNode.delivery_item_list:
-                beforeOrderId = ""
-                for orderItem in nextNode.delivery_item_list:
-                    nextOrderId = orderItem.order_id
-                    if beforeOrderId != nextOrderId:
-                        commitCompleteTime = orderItem.committed_completion_time
-                        overTime_sum += max(0, curr_Time[minT2VehicleIndex] - commitCompleteTime)
-                    beforeOrderId = nextOrderId
-
-            #isSameAddress = True
-            serviceTime += nextNode.service_time
-            curr_Node[minT2VehicleIndex] += 1
-
-        if curr_Node[minT2VehicleIndex] >= nNode[minT2VehicleIndex]:
-            n -= 1
-            curr_Node[minT2VehicleIndex] = sys.maxsize
-            curr_Time[minT2VehicleIndex] = sys.maxsize
-            nNode[minT2VehicleIndex] = 0
-        else:
-            disAndTime = route_map[(curFactoryId , minTNodeList[curr_Node[minT2VehicleIndex]].id)]
-            
-            distance, time = disAndTime
-            curr_Time[minT2VehicleIndex] = tTrue + APPROACHING_DOCK_TIME + serviceTime + time
-            leaveLastNodeTime[minT2VehicleIndex] = tTrue + APPROACHING_DOCK_TIME + serviceTime
-            driving_distance += distance
-
-        tw = [minT, tTrue + APPROACHING_DOCK_TIME + serviceTime]
-        docktable.setdefault(minTNode.id, []).append(tw)
-
-    F = Delta * overTime_sum + driving_distance / len(id_to_vehicle)
-    if F < 0:
-        print("The objective function is less than 0.")
-    return F
 
 def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle] , vehicleid_to_plan: Dict[str, list[Node]], route_map: Dict[tuple , tuple] ):
     bestInsertVehicleID: str = None
@@ -580,20 +312,514 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
         return isExhausive , bestInsertVehicleID, bestInsertPosI, bestInsertPosJ , bestNodeList
 
 
-def inter_couple_exchange():
-    pass
+# Truyền tham số bình thường vào hàm này (Không cần truyền Copy)
+def get_OngoingSuperNode (vehicleid_to_plan: Dict[str , List[Node]] , id_to_vehicle: Dict[str , Vehicle] ) -> Dict[int , Dict[str, Node]]:
+    OngoingSuperNodes : Dict[int , Dict[str , Node]] 
+    
+    vehicleNo = 1
+    NodePairNum = 0 
+    # xet từng kế hoạch di chuyển của phương tiện
+    for vehicleID , vehicle_plan in vehicleid_to_plan.items():
+        vehicle = id_to_vehicle[vehicleID]
+        if len(vehicle_plan) > 0:
+            index = 0
+            if vehicle.des is not None:
+                index =1
+            
+            pickup_node_heap: deque[Node] = deque()
+            p_node_idx_heap= deque()
+            p_and_d_node_map = {}
+            idx = 0
+            before_p_factory_id = before_d_factory_id = None
+            before_p_node_idx = before_d_node_idx = 0
+            
+            # đối với mỗi node của phương tiện
+            for i in range (index , len(vehicle_plan)):
+                curr = vehicle_plan[i]
+                if curr.delivery_item_list  and curr.pickup_item_list :
+                    print ("Exits combine node exception when Local search" , file= sys.stderr)
+                
+                heapTopOrderItemId = pickup_node_heap[0].pickup_item_list[0].id if pickup_node_heap else ""
+                if curr.delivery_item_list:
+                    len = len(curr.delivery_item_list)
+                    if curr.delivery_item_list[-1].id == heapTopOrderItemId:
+                        pickup_node_key = f"V_{vehicleNo},{p_node_idx_heap[0]}"
+                        delivery_node_key = f"V_{vehicleNo},{i}"
+                
+                    if len(p_and_d_node_map) >= 2:
+                        if (pickup_node_heap[0].id != before_p_factory_id or p_node_idx_heap[0] + 1 != before_p_node_idx or curr.get_id() != before_d_factory_id or i - 1 != before_d_node_idx):
+                            OngoingSuperNodes[NodePairNum] = p_and_d_node_map
+                            NodePairNum += 1
+                            p_and_d_node_map = {}
 
-def block_exchange():
-    pass
+                    p_and_d_node_map[pickup_node_key] = pickup_node_heap[0]
+                    p_and_d_node_map[delivery_node_key] = curr
 
-def block_relocate():
-    pass
+                    before_p_factory_id = pickup_node_heap[0].get_id()
+                    before_p_node_idx = p_node_idx_heap[0]
+                    before_d_factory_id = curr.id
+                    before_d_node_idx = i
+                    pickup_node_heap.pop(0)
+                    p_node_idx_heap.pop(0)
+                
+                
+                if curr.pickup_item_list:
+                    pickup_node_heap.appendleft(curr)
+                    p_node_idx_heap.appendleft(i)
+                    if p_and_d_node_map:
+                        OngoingSuperNodes[NodePairNum] = p_and_d_node_map
+                        NodePairNum += 1
+                        p_and_d_node_map.clear()
+            
+            if len(p_and_d_node_map) >= 2:
+                OngoingSuperNodes[NodePairNum] = p_and_d_node_map
+                NodePairNum += 1
+        vehicleNo += 1
+    
+    return OngoingSuperNodes
 
-def multi_pd_group_relocate():
-    pass
 
-def improve_ci_path_by_2_opt():
-    pass
+def isFeasible(route_node_list : List[Node] , carrying_items : List[OrderItem] , capacity : float ):
+    unload_item_list = carrying_items[::-1] if carrying_items else []
 
-def cost():
-    pass
+    for node in route_node_list:
+        delivery_items : List[OrderItem] = node.delivery_item_list
+        pickup_items : List[OrderItem]= node.pickup_item_list
+
+        if delivery_items:
+            for order_item in delivery_items:
+                if not unload_item_list or unload_item_list[0] is None or unload_item_list[0].id != order_item.id:
+                    print("Violate FILO" , file= sys.stderr)
+                    return False
+                unload_item_list.pop(0)
+
+        if pickup_items:
+            unload_item_list = pickup_items + unload_item_list
+
+    if unload_item_list:
+        print("Violate FILO" ,file= sys.stderr)
+        return False
+
+    left_capacity = capacity
+    if carrying_items:
+        for order_item in carrying_items:
+            left_capacity -= order_item.demand
+
+    for node in route_node_list:
+        delivery_items = node.delivery_item_list
+        pickup_items = node.pickup_item_list
+
+        if delivery_items:
+            for order_item in delivery_items:
+                left_capacity += order_item.demand
+                if left_capacity > capacity:
+                    return False
+
+        if pickup_items:
+            for order_item in pickup_items:
+                left_capacity -= order_item.demand
+                if left_capacity < 0:
+                    return False
+
+    return True
+
+def cost_of_a_route (temp_route_node_list : List[Node] , vehicle: Vehicle , id_to_vehicle: Dict[str , Vehicle] , route_map: Dict[tuple , tuple] , vehicleid_to_plan: Dict[str , list[Node]]) -> float:
+    curr_factoryID = vehicle.cur_factory_id
+    driving_dis  : float = 0.0
+    overtime_Sum : float = 0.0
+    objF : float = 0.0
+    capacity = vehicle.board_capacity
+    carrying_Items : List[OrderItem] = vehicle.carrying_items if vehicle.des else []
+    if temp_route_node_list and not isFeasible(temp_route_node_list , carrying_Items , capacity):
+        return math.inf
+    
+    dock_table: Dict[str, List[List[int]]] = {}
+    n: int = 0
+    vehicle_num: int = len(id_to_vehicle)
+
+    curr_node: List[int] = [0] * vehicle_num
+    curr_time: List[int] = [0] * vehicle_num
+    leave_last_node_time: List[int] = [0] * vehicle_num
+
+    update_time= id_to_vehicle["V_1"].gps_update_time
+    n_node: List[int] = [0] * vehicle_num
+    index = 0
+    
+    for vehicleID , otherVehicle in id_to_vehicle.items():
+        distance = 0
+        time  = 0
+        
+        if otherVehicle.cur_factory_id and len(otherVehicle.cur_factory_id) > 0:
+            if otherVehicle.leave_time_at_current_factory > otherVehicle.gps_update_time:
+                tw: List[int] = [
+                    otherVehicle.arrive_time_at_current_factory,
+                    otherVehicle.leave_time_at_current_factory
+                ]
+                tw_list: Optional[List[List[int]]] = dock_table.get(otherVehicle.cur_factory_id)
+                if tw_list is None:
+                    tw_list = []
+                tw_list.append(tw)
+                dock_table[otherVehicle.cur_factory_id] = tw_list
+            leave_last_node_time[index] = otherVehicle.leave_time_at_current_factory
+        else:
+            leave_last_node_time[index] = otherVehicle.gps_update_time
+        
+        # Neu la xe dang xet
+        if vehicleID == vehicle.id:
+            if not temp_route_node_list or len(temp_route_node_list) == 0:
+                curr_node[index] = math.inf
+                curr_time[index] = math.inf
+                n_node[index] = math.inf
+            else:
+                curr_node[index] = 0
+                n_node[index] = len(temp_route_node_list)
+                if vehicle.des == None:
+                    if vehicle.cur_factory_id == "":
+                        print("cur factory have no value" , file= sys.stderr)
+                    if len(temp_route_node_list) == 0:
+                        print("tempRouteNodeList have no length" , file= sys.stderr)
+                        
+                    if vehicle.cur_factory_id == temp_route_node_list[0].id:
+                        curr_time[index] = vehicle.leave_time_at_current_factory
+                    else:
+                        dis_and_time = route_map.get((vehicle.cur_factory_id , temp_route_node_list[0].id))
+                        distance = float(dis_and_time[0])
+                        time = int(dis_and_time[1])
+                        curr_time[index] = vehicle.leave_time_at_current_factory + time
+                        driving_dis += distance
+                else:
+                    if curr_factoryID is not None and len(curr_factoryID) > 0:
+                        if  curr_factoryID == temp_route_node_list[0].id:
+                            curr_time[index] = vehicle.leave_time_at_current_factory
+                        else:
+                            curr_time[index] = vehicle.leave_time_at_current_factory
+                            dis_and_time = route_map.get((curr_factoryID , temp_route_node_list[0].id))
+                            distance = float(dis_and_time[0])
+                            time = int(dis_and_time[1])
+                            driving_dis += distance
+                            curr_time[index] += time
+                    else:
+                        curr_time[index] = vehicle.des.arrive_time
+                
+                n += 1
+        # Neu khong phai xe dang xet
+        elif vehicleid_to_plan[vehicleID] and len(vehicleid_to_plan[vehicleID]) > 0:    
+            curr_node[index] = 0
+            n_node[index] = len(vehicleid_to_plan[vehicleID]) 
+            
+            if otherVehicle.des is None:
+                if otherVehicle.cur_factory_id == vehicleid_to_plan[vehicleID][0].id:
+                    curr_time[index] = otherVehicle.leave_time_at_current_factory
+                else:
+                    dis_and_time = route_map.get((otherVehicle.cur_factory_id , vehicleid_to_plan[vehicleID][0].id))
+                    if dis_and_time is None:
+                        print("no distance" , file= sys.stderr)
+                    
+                    distance = float(dis_and_time[0])
+                    time = int(dis_and_time[1])
+                    curr_time[index] = otherVehicle.leave_time_at_current_factory + time
+                    driving_dis += distance
+            else:
+                if otherVehicle.cur_factory_id is not None and len(otherVehicle.cur_factory_id) > 0:
+                    if otherVehicle.cur_factory_id == vehicleid_to_plan[vehicleID][0].id:
+                        curr_time[index]  = otherVehicle.leave_time_at_current_factory
+                    else:
+                        curr_time[index] = otherVehicle.leave_time_at_current_factory
+                        dis_and_time = route_map.get((otherVehicle.cur_factory_id , vehicleid_to_plan[vehicleID][0].id))
+                        distance = float(dis_and_time[0])
+                        time = int(dis_and_time[1])
+                        curr_time[index] += time
+                        driving_dis += distance
+                else: 
+                    curr_time[index] = otherVehicle.des.arrive_time
+            n+=1
+        else:
+            curr_time[index] = math.inf
+            curr_time[index] = math.inf
+            n_node[index] = 0
+        index += 1
+        
+    flag = False
+    while n > 0:
+        minT = math.inf
+        minT2VehicleIndex = 0
+        tTrue = minT
+        idx = 0
+        
+        for i in range (len(vehicle_num)):
+            if curr_time[i] < minT:
+                minT = curr_time[i]
+                minT2VehicleIndex = i
+        
+        minT2VehicleIndex += 1
+        minT2VehicleID = "V_" + str(minT2VehicleIndex)
+        minT2VehicleIndex -= 1
+        
+        minTNodeList: List[Node] = []
+        if minT2VehicleID == vehicle.id:
+            minTNodeList = temp_route_node_list
+        else:
+            minTNodeList = vehicleid_to_plan[minT2VehicleID]
+        minTNode = minTNodeList[curr_node[minT2VehicleIndex]]
+        
+        if minTNode.delivery_item_list and len(minTNode.delivery_item_list) > 0:
+            beforeOrderID = ""
+            nextOrderID = ""
+            for order_item in minTNode.delivery_item_list:
+                nextOrderID = order_item.id
+                if beforeOrderID != nextOrderID:
+                    commitCompleteTime = order_item.committed_completion_time
+                    overtime_Sum += max(0 , curr_time[minT2VehicleIndex] - commitCompleteTime)
+                beforeOrderID = nextOrderID
+        
+        usedEndTime : List[int] = []
+        timeSlots : List[List[int]] =  dock_table.get(minTNode.id, [])
+        if timeSlots:
+            i = 0
+            while i < len(timeSlots):
+                time_slot = timeSlots[i]
+                if time_slot[1] <= minT:
+                    timeSlots.pop(i)  # Xóa phần tử nếu end_time <= minT
+                elif time_slot[0] <= minT < time_slot[1]:
+                    usedEndTime.append(time_slot[1])
+                    i += 1
+                else:
+                    print("------------ timeslot.start > minT --------------")
+                    i += 1
+
+        if len(usedEndTime) < 6:
+            tTrue = minT
+        else:
+            flag = True
+            idx = len(usedEndTime) - 6
+            usedEndTime.sort()
+            tTrue = usedEndTime[idx]
+            
+        is_same_address = False
+        service_time = minTNodeList[curr_node[minT2VehicleIndex]].service_time
+        cur_factory_id = minTNodeList[curr_node[minT2VehicleIndex]].id
+        curr_node[minT2VehicleIndex] += 1
+
+        while (curr_node[minT2VehicleIndex] < n_node[minT2VehicleIndex] and
+            cur_factory_id == minTNodeList[curr_node[minT2VehicleIndex]].get_id()):
+
+            delivery_item_list = minTNodeList[curr_node[minT2VehicleIndex]].delivery_item_list
+            
+            if delivery_item_list and len(delivery_item_list) > 0:
+                before_order_id = ""
+                next_order_id = ""
+
+                for order_item in delivery_item_list:
+                    next_order_id = order_item.order_id
+                    if before_order_id != next_order_id:
+                        commit_complete_time = order_item.committed_completion_time
+                        overtime_Sum += max(0, curr_time[minT2VehicleIndex] - commit_complete_time)
+                    before_order_id = next_order_id
+
+            is_same_address = True
+            service_time += minTNodeList[curr_node[minT2VehicleIndex]].service_time
+            curr_node[minT2VehicleIndex] += 1
+            
+        if curr_node[minT2VehicleIndex] >= n_node[minT2VehicleIndex]:
+            n -= 1
+            curr_node[minT2VehicleIndex] = math.inf
+            curr_time[minT2VehicleIndex] = math.inf
+            n_node[minT2VehicleIndex] = 0
+        else:
+            dis_and_time = route_map.get((cur_factory_id , minTNodeList[curr_node[minT2VehicleIndex]].id))
+            if dis_and_time:
+                distance = float(dis_and_time[0])
+                time = int(dis_and_time[1])
+
+                curr_time[minT2VehicleID] = tTrue + APPROACHING_DOCK_TIME + service_time + time
+                leave_last_node_time[minT2VehicleIndex] = tTrue + APPROACHING_DOCK_TIME + service_time
+                driving_dis += distance
+
+        tw = [minT, tTrue + APPROACHING_DOCK_TIME + service_time]
+        tw_list = dock_table.get(minTNode.id, [])
+
+        tw_list.append(tw)
+        dock_table[minTNode.id] = tw_list
+    
+    objF = Delta * overtime_Sum + driving_dis / float(len(id_to_vehicle))
+    if objF < 0:
+        print("the objective function less than 0" , file= sys.stderr)
+    return objF
+
+
+def total_cost(id_to_vehicle: Dict[str , Vehicle] , route_map: Dict[tuple , tuple] , vehicleid_to_plan: Dict[str , list[Node]]) -> float:
+    driving_dis  : float = 0.0
+    overtime_Sum : float = 0.0
+    objF : float = 0.0
+    dock_table: Dict[str, List[List[int]]] = {}
+    n: int = 0
+    vehicle_num: int = len(id_to_vehicle)
+
+    curr_node: List[int] = [0] * vehicle_num
+    curr_time: List[int] = [0] * vehicle_num
+    leave_last_node_time: List[int] = [0] * vehicle_num
+
+    update_time= id_to_vehicle["V_1"].gps_update_time
+    n_node: List[int] = [0] * vehicle_num
+    index = 0
+    
+    for vehicleID , otherVehicle in id_to_vehicle.items():
+        distance = 0
+        time  = 0
+        
+        if otherVehicle.cur_factory_id and len(otherVehicle.cur_factory_id) > 0:
+            if otherVehicle.leave_time_at_current_factory > otherVehicle.gps_update_time:
+                tw: List[int] = [
+                    otherVehicle.arrive_time_at_current_factory,
+                    otherVehicle.leave_time_at_current_factory
+                ]
+                tw_list: Optional[List[List[int]]] = dock_table.get(otherVehicle.cur_factory_id)
+                if tw_list is None:
+                    tw_list = []
+                tw_list.append(tw)
+                dock_table[otherVehicle.cur_factory_id] = tw_list
+            leave_last_node_time[index] = otherVehicle.leave_time_at_current_factory
+        else:
+            leave_last_node_time[index] = otherVehicle.gps_update_time
+        
+        if vehicleid_to_plan.get(vehicleID) and len(vehicleid_to_plan.get(vehicleID)) > 0:    
+            curr_node[index] = 0
+            n_node[index] = len(vehicleid_to_plan[vehicleID]) 
+            
+            if otherVehicle.des is None:
+                if otherVehicle.cur_factory_id == vehicleid_to_plan[vehicleID][0].id:
+                    curr_time[index] = otherVehicle.leave_time_at_current_factory
+                else:
+                    dis_and_time = route_map.get((otherVehicle.cur_factory_id , vehicleid_to_plan[vehicleID][0].id))
+                    if dis_and_time is None:
+                        print("no distance" , file= sys.stderr)
+                    
+                    distance = float(dis_and_time[0])
+                    time = int(dis_and_time[1])
+                    curr_time[index] = otherVehicle.leave_time_at_current_factory + time
+                    driving_dis += distance
+            else:
+                if otherVehicle.cur_factory_id is not None and len(otherVehicle.cur_factory_id) > 0:
+                    if otherVehicle.cur_factory_id == vehicleid_to_plan[vehicleID][0].id:
+                        curr_time[index]  = otherVehicle.leave_time_at_current_factory
+                    else:
+                        curr_time[index] = otherVehicle.leave_time_at_current_factory
+                        dis_and_time = route_map.get((otherVehicle.cur_factory_id , vehicleid_to_plan[vehicleID][0].id))
+                        distance = float(dis_and_time[0])
+                        time = int(dis_and_time[1])
+                        curr_time[index] += time
+                        driving_dis += distance
+                else: 
+                    curr_time[index] = otherVehicle.des.arrive_time
+            n+=1
+        else:
+            curr_time[index] = math.inf
+            curr_time[index] = math.inf
+            n_node[index] = 0
+        index += 1
+        
+    flag = False
+    while n > 0:
+        minT = math.inf
+        minT2VehicleIndex = 0
+        tTrue = minT
+        idx = 0
+        
+        for i in range (len(vehicle_num)):
+            if curr_time[i] < minT:
+                minT = curr_time[i]
+                minT2VehicleIndex = i
+        
+        minT2VehicleIndex += 1
+        minT2VehicleID = "V_" + str(minT2VehicleIndex)
+        minT2VehicleIndex -= 1
+        
+        minTNodeList: List[Node] = []
+        minTNodeList = vehicleid_to_plan.get(minT2VehicleID)
+        minTNode = minTNodeList[curr_node[minT2VehicleIndex]]
+        
+        if minTNode.delivery_item_list and len(minTNode.delivery_item_list) > 0:
+            beforeOrderID = ""
+            nextOrderID = ""
+            for order_item in minTNode.delivery_item_list:
+                nextOrderID = order_item.id
+                if beforeOrderID != nextOrderID:
+                    commitCompleteTime = order_item.committed_completion_time
+                    overtime_Sum += max(0 , curr_time[minT2VehicleIndex] - commitCompleteTime)
+                beforeOrderID = nextOrderID
+        
+        usedEndTime : List[int] = []
+        timeSlots : List[List[int]] =  dock_table.get(minTNode.id, [])
+        if timeSlots:
+            i = 0
+            while i < len(timeSlots):
+                time_slot = timeSlots[i]
+                if time_slot[1] <= minT:
+                    timeSlots.pop(i)  # Xóa phần tử nếu end_time <= minT
+                elif time_slot[0] <= minT < time_slot[1]:
+                    usedEndTime.append(time_slot[1])
+                    i += 1
+                else:
+                    print("------------ timeslot.start > minT --------------")
+                    i += 1
+
+        if len(usedEndTime) < 6:
+            tTrue = minT
+        else:
+            flag = True
+            idx = len(usedEndTime) - 6
+            usedEndTime.sort()
+            tTrue = usedEndTime[idx]
+            
+        is_same_address = False
+        service_time = minTNodeList[curr_node[minT2VehicleIndex]].service_time
+        cur_factory_id = minTNodeList[curr_node[minT2VehicleIndex]].id
+        curr_node[minT2VehicleIndex] += 1
+
+        while (curr_node[minT2VehicleIndex] < n_node[minT2VehicleIndex] and
+            cur_factory_id == minTNodeList[curr_node[minT2VehicleIndex]].get_id()):
+
+            delivery_item_list = minTNodeList[curr_node[minT2VehicleIndex]].delivery_item_list
+            
+            if delivery_item_list and len(delivery_item_list) > 0:
+                before_order_id = ""
+                next_order_id = ""
+
+                for order_item in delivery_item_list:
+                    next_order_id = order_item.order_id
+                    if before_order_id != next_order_id:
+                        commit_complete_time = order_item.committed_completion_time
+                        overtime_Sum += max(0, curr_time[minT2VehicleIndex] - commit_complete_time)
+                    before_order_id = next_order_id
+
+            is_same_address = True
+            service_time += minTNodeList[curr_node[minT2VehicleIndex]].service_time
+            curr_node[minT2VehicleIndex] += 1
+            
+        if curr_node[minT2VehicleIndex] >= n_node[minT2VehicleIndex]:
+            n -= 1
+            curr_node[minT2VehicleIndex] = math.inf
+            curr_time[minT2VehicleIndex] = math.inf
+            n_node[minT2VehicleIndex] = 0
+        else:
+            dis_and_time = route_map.get((cur_factory_id , minTNodeList[curr_node[minT2VehicleIndex]].id))
+            if dis_and_time:
+                distance = float(dis_and_time[0])
+                time = int(dis_and_time[1])
+
+                curr_time[minT2VehicleID] = tTrue + APPROACHING_DOCK_TIME + service_time + time
+                leave_last_node_time[minT2VehicleIndex] = tTrue + APPROACHING_DOCK_TIME + service_time
+                driving_dis += distance
+
+        tw = [minT, tTrue + APPROACHING_DOCK_TIME + service_time]
+        tw_list = dock_table.get(minTNode.id, [])
+
+        tw_list.append(tw)
+        dock_table[minTNode.id] = tw_list
+    
+    objF = Delta * overtime_Sum + driving_dis / float(len(id_to_vehicle))
+    if objF < 0:
+        print("the objective function less than 0" , file= sys.stderr)
+    return objF
+
+
