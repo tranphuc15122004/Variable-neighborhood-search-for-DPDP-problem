@@ -1,15 +1,16 @@
 from collections import deque
 import json
 import os
+import re
 import string
 import sys
 import math
-from typing import Dict , List, Optional
+from typing import Dict , List, Optional , Tuple ,OrderedDict
 from Read_input import Input
 from Object import Factory, Node, Vehicle, VehicleInfo, OrderItem, Destination
 import copy
 import numpy as np
-from constant import APPROACHING_DOCK_TIME , Delta , debugPeriod , SLACK_TIME_THRESHOLD , modle4 , modle6 , modle8
+from constant import APPROACHING_DOCK_TIME , Delta1, Delta , debugPeriod , SLACK_TIME_THRESHOLD , modle4 , modle6 , modle8
 
 
 def create_Pickup_Delivery_nodes(tmp_itemList: list[OrderItem] , id_to_factory: Dict[str , Factory]) -> list[Node]:
@@ -45,8 +46,7 @@ def create_Pickup_Delivery_nodes(tmp_itemList: list[OrderItem] , id_to_factory: 
         delivery_item_list.append(item)
     delivery_node = Node(delivery_factory.factory_id,delivery_item_list,[],delivery_factory.lng,delivery_factory.lat)
 
-    res.append(pickup_node)
-    res.append(delivery_node)
+    res.extend([pickup_node, delivery_node])
     return res
 
 def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle] , vehicleid_to_plan: Dict[str, list[Node]], route_map: Dict[tuple , tuple] ):
@@ -92,9 +92,9 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
 
         model_nodes_num -= first_merge_node_num
 
-        modle_node_list = [] #thêm các cặp node gửi và nhận theo thứ tự mới
-        exhaustive_route_node_list = [] # chứa các node đầu tiến của plan (node giao) (node không thể thay đổi do đang trên đường thực hiện rồi)
-        cp_route_node_list = None # chứa phần còn lại sau khi tách các node giao ở đầu (phần mà các node đều đầy đủ)
+        modle_node_list : List[Node]= [] #thêm các cặp node gửi và nhận theo thứ tự mới
+        exhaustive_route_node_list : List[Node]= [] 
+        cp_route_node_list = None
 
         if vehicle_plan is not None:
             cp_route_node_list = list(vehicle_plan)
@@ -150,7 +150,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
             if model_nodes_num == 2:
                 exhaustive_route_node_list.append(new_pickup_node)
                 exhaustive_route_node_list.append(new_delivery_node)
-                tmp_cost = cost(exhaustive_route_node_list , vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
+                tmp_cost = cost_of_a_route(exhaustive_route_node_list , vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
                 if tmp_cost < minCostDelta: 
                     minCostDelta = tmp_cost
                     isExhausive = True
@@ -163,8 +163,8 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                             for j in range(1, 4):
                                 exhaustive_route_node_list.append(modle_node_list[modle4[i][j] - 1])
 
-                            costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
-                            
+                            costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
+
                             if costValue < minCostDelta:
                                 minCostDelta = costValue
                                 bestNodeList = exhaustive_route_node_list[:]
@@ -176,7 +176,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                         for j in range(4):
                             exhaustive_route_node_list.append(modle_node_list[modle4[i][j]])
 
-                        costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
+                        costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
 
                         if costValue < minCostDelta:
                             minCostDelta = costValue
@@ -191,7 +191,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                         if modle6[i][0] == 0:
                             for j in range(1, 6):
                                 exhaustive_route_node_list.append(modle_node_list[modle6[i][j] - 1])
-                            costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
+                            costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map , vehicleid_to_plan)
                             if costValue < minCostDelta:
                                 minCostDelta = costValue
                                 bestNodeList = exhaustive_route_node_list[:]
@@ -202,7 +202,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                         if modle6[i][0] == 0 and modle6[i][1] == 1:
                             for j in range(2, 6):
                                 exhaustive_route_node_list.append(modle_node_list[modle6[i][j] - 2])
-                            costValue = cost(exhaustive_route_node_list, vehicle ,id_to_vehicle ,route_map , vehicleid_to_plan )
+                            costValue = cost_of_a_route(exhaustive_route_node_list, vehicle ,id_to_vehicle ,route_map , vehicleid_to_plan )
                             if costValue < minCostDelta:
                                 minCostDelta = costValue
                                 bestNodeList = exhaustive_route_node_list[:]
@@ -212,7 +212,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                     else:
                         for j in range(6):
                             exhaustive_route_node_list.append(modle_node_list[modle6[i][j]])
-                        costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
+                        costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
                         if costValue < minCostDelta:
                             minCostDelta = costValue
                             bestNodeList = exhaustive_route_node_list[:]
@@ -225,7 +225,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                         if modle8[i][0] == 0:
                             for j in range(1, 8):
                                 exhaustive_route_node_list.append(modle_node_list[modle8[i][j] - 1])
-                            costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
+                            costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
                             if costValue < minCostDelta:
                                 minCostDelta = costValue
                                 bestNodeList = exhaustive_route_node_list[:]
@@ -236,7 +236,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                         if modle8[i][0] == 0 and modle8[i][1] == 1:
                             for j in range(2, 8):
                                 exhaustive_route_node_list.append(modle_node_list[modle8[i][j] - 2])
-                            costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
+                            costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
                             if costValue < minCostDelta:
                                 minCostDelta = costValue
                                 bestNodeList = exhaustive_route_node_list[:]
@@ -247,7 +247,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                         if modle8[i][0] == 0 and modle8[i][1] == 1 and modle8[i][2] == 2:
                             for j in range(3, 8):
                                 exhaustive_route_node_list.append(modle_node_list[modle8[i][j] - 3])
-                            costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
+                            costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
                             if costValue < minCostDelta:
                                 minCostDelta = costValue
                                 bestNodeList = exhaustive_route_node_list[:]
@@ -257,7 +257,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
                     else:
                         for j in range(8):
                             exhaustive_route_node_list.append(modle_node_list[modle8[i][j]])
-                        costValue = cost(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
+                        costValue = cost_of_a_route(exhaustive_route_node_list, vehicle , id_to_vehicle , route_map, vehicleid_to_plan)
                         if costValue < minCostDelta:
                             minCostDelta = costValue
                             bestNodeList = exhaustive_route_node_list[:]
@@ -299,7 +299,7 @@ def dispatch_nodePair(node_list: list[Node] , id_to_vehicle: Dict[str , Vehicle]
 
                     tempRouteNodeList.insert(j, new_delivery_node)
 
-                    costValue = cost(tempRouteNodeList, vehicle, id_to_vehicle , route_map , vehicleid_to_plan)
+                    costValue = cost_of_a_route(tempRouteNodeList, vehicle, id_to_vehicle , route_map , vehicleid_to_plan)
                     if costValue < minCostDelta:
                         minCostDelta = costValue
                         bestInsertPosI = i
@@ -822,4 +822,658 @@ def total_cost(id_to_vehicle: Dict[str , Vehicle] , route_map: Dict[tuple , tupl
         print("the objective function less than 0" , file= sys.stderr)
     return objF
 
+def single_vehicle_cost(route_node_list: List[Node] , vehicle:Vehicle , route_map: Dict[tuple[str , str] , tuple[str , str]]):
+    curr_factoryID = vehicle.cur_factory_id
+    utilTime :int = 0
+    driving_dis :float= 0.0
+    overtime_sum :float= 0.0
+    orderNum :int= 0
+    objF: float  = 0.0
+    capacity = vehicle.board_capacity
+    
+    if not route_node_list:
+        return 0
+    
+    carrying_items :List[OrderItem] = (vehicle.carrying_items) if vehicle.des else []
+    if not isFeasible(route_node_list , carrying_items , capacity):
+        return math.inf
+    
+    if curr_factoryID is not None and len(curr_factoryID) > 0:
+        utilTime = vehicle.leave_time_at_current_factory
+        for next_node in route_node_list:
+            next_factoryID = next_node.id
+            distance = 0
+            time= 0
+            if curr_factoryID != next_factoryID:
+                distance , time = route_map.get((curr_factoryID , next_factoryID))
+                distance = float(distance)
+                time = int(time)
+                utilTime += APPROACHING_DOCK_TIME
+            driving_dis += distance
+            utilTime += time
+            
+            if next_node.delivery_item_list:
+                before_orderID = ""
+                next_orderID = ""
+                for orderitem in next_node.delivery_item_list:
+                    next_orderID = orderitem.order_id
+                    if (before_orderID != next_orderID):
+                        overtime_sum += max(0 , utilTime - orderitem.committed_completion_time)
+                    before_orderID = next_orderID
+            utilTime += next_node.service_time
+            curr_factoryID = next_factoryID
+    else:
+        utilTime = vehicle.des.arrive_time
+        curr_factoryID = route_node_list[0].id
+        curr_node = route_node_list[0]
+        if curr_node.delivery_item_list:
+            before_orderID = ""
+            next_orderID = ""
+            for orderitem in curr_node.delivery_item_list:
+                next_orderID = orderitem.order_id
+                if (before_orderID != next_orderID):
+                    overtime_sum += max(0 , utilTime - orderitem.committed_completion_time)
+                before_orderID = next_orderID
+        for next_node in route_node_list[1:]:
+            next_factoryID = next_node.id
+            distance = 0
+            time = 0
+            if curr_factoryID != next_factoryID:
+                distance , time = route_map.get((curr_factoryID , next_factoryID))
+                distance = float(distance)
+                time = int(time)
+                utilTime += APPROACHING_DOCK_TIME
+            driving_dis += distance
+            utilTime += time
+            
+            if next_node.delivery_item_list:
+                before_orderID = ""
+                next_orderID = ""
+                for orderitem in next_node.delivery_item_list:
+                    next_orderID = orderitem.order_id
+                    if (before_orderID != next_orderID):
+                        overtime_sum += max(0 , utilTime - orderitem.committed_completion_time)
+                    before_orderID = next_orderID
+            utilTime += next_node.service_time
+            curr_factoryID = next_factoryID
+    
+    objF = Delta1 * overtime_sum + driving_dis
+    return objF
 
+
+def get_couple_end_idx_map(route_node_list: List[Node]):
+    couple_end_idx_map = {}
+    for i, node in enumerate(route_node_list):
+        if node.pickup_item_list:
+            for j in range(i + 1, len(route_node_list)):
+                if (route_node_list[j].delivery_item_list):
+                    len_delivery = len(route_node_list[j].delivery_item_list)
+                    if (node.pickup_item_list[0].id ==route_node_list[j].delivery_item_list[len_delivery - 1].id):
+                        couple_end_idx_map[node.pickup_item_list[0].id] = j
+                        break
+    return couple_end_idx_map
+
+
+def dispatch_order_to_best(node_list: List[Node], cp_vehicle_id2_planned_route :Dict[str , List[Node]], id_to_vehicle: Dict[str , Vehicle] , route_map: Dict[Tuple[str , str] , Tuple[str , str]]):
+    min_cost_delta, best_insert_pos_i, best_insert_pos_j, best_insert_vehicle_id
+    
+    pickup_node_list = node_list[:len(node_list) // 2]
+    delivery_node_list = node_list[len(node_list) // 2:]
+    min_cost_delta = math.inf
+    block_len = len(pickup_node_list)
+    
+    index = 0
+    
+    for vehicle_id, vehicle in id_to_vehicle.items():
+        vehicle_id = f"V_{index + 1}"
+        index += 1
+        
+        route_node_list = cp_vehicle_id2_planned_route.get(vehicle_id, [])
+        cost_value0 = single_vehicle_cost(route_node_list, vehicle , route_map)
+        node_list_size = len(route_node_list) if route_node_list else 0
+        couple_end_idx_map = get_couple_end_idx_map(route_node_list) if route_node_list else {}
+        
+        insert_pos = 1 if vehicle.des else 0
+        
+        for i in range(insert_pos, node_list_size + 1):
+            temp_route_node_list = list(route_node_list) if route_node_list else []
+            temp_route_node_list[i:i] = pickup_node_list
+            
+            for j in range(block_len + i, node_list_size + block_len + 1):
+                if j == block_len + i:
+                    temp_route_node_list[j:j] = delivery_node_list
+                else:
+                    # Neu vi tri truoc do la node nhan hang
+                    if (temp_route_node_list[j - 1].pickup_item_list and len(temp_route_node_list[j - 1].pickup_item_list) > 0):
+                        order_item_id = temp_route_node_list[j - 1].pickup_item_list[0].id
+                        j = block_len + couple_end_idx_map.get(order_item_id, j) + 1
+                        temp_route_node_list[j:j] = delivery_node_list
+                    # Neu truoc do la node giao hang
+                    elif (temp_route_node_list[j - 1].delivery_item_list):
+                        is_terminal = True
+                        for k in range(j - 2, -1, -1):
+                            if (temp_route_node_list[k].pickup_item_list and temp_route_node_list[k].pickup_item_list):
+                                last_delivery_item = temp_route_node_list[j - 1].delivery_item_list[-1].id
+                                first_pickup_item = temp_route_node_list[k].pickup_item_list[0].id
+                                if last_delivery_item == first_pickup_item:
+                                    is_terminal = k < i
+                                    break
+                        if is_terminal:
+                            break
+                        temp_route_node_list[j:j] = delivery_node_list
+                
+                cost_value = single_vehicle_cost(temp_route_node_list, vehicle , route_map)
+                del temp_route_node_list[j:j + block_len]
+                
+                if cost_value - cost_value0 < min_cost_delta:
+                    min_cost_delta = cost_value - cost_value0
+                    best_insert_pos_i = i
+                    best_insert_pos_j = j
+                    best_insert_vehicle_id = vehicle_id
+    return min_cost_delta, best_insert_pos_i, best_insert_pos_j, best_insert_vehicle_id
+
+
+def check(temp_route_node_list: List[Node], begin_pos: int):
+    route_len = len(temp_route_node_list)
+    is_feasible = [[False] * route_len for _ in range(route_len)]
+    
+    for i in range(begin_pos, route_len - 1):
+        first_node = temp_route_node_list[i]
+        if first_node.delivery_item_list:
+            continue
+        
+        for j in range(i + 1, route_len):
+            last_node = temp_route_node_list[j]
+            if last_node.pickup_item_list:
+                continue
+            
+            node_list : List[Node] = []
+            is_d_node_redundant = False
+            
+            for k in range(i, j + 1):
+                node = temp_route_node_list[k]
+                if node.pickup_item_list:
+                    node_list.insert(0, node)
+                else:
+                    d_len = len(node.delivery_item_list)
+                    if node_list and node_list[0].pickup_item_list and \
+                        node_list[0].pickup_item_list[0].id == node.delivery_item_list[d_len - 1].id:
+                        node_list.pop(0)
+                    else:
+                        is_d_node_redundant = True
+                        break
+            
+            if not node_list and not is_d_node_redundant:
+                is_feasible[i][j] = True
+    
+    return is_feasible
+
+def is_overlapped(temp_route_node_list: List[Node], i: int) -> int:
+    heap : List[Node] = []
+    
+    for k in range(i):
+        if temp_route_node_list[k].pickup_item_list :
+            heap.insert(0, temp_route_node_list[k])
+        else:
+            d_len = len(temp_route_node_list[k].delivery_item_list)
+            if heap and temp_route_node_list[k].delivery_item_list[-1].id == heap[0].pickup_item_list[0].id:
+                heap.pop(0)
+
+    idx = 0
+    k = i + 2
+
+    if heap:
+        while k < len(temp_route_node_list):
+            if temp_route_node_list[k].delivery_item_list:
+                d_len = len(temp_route_node_list[k].delivery_item_list)
+                if heap[0].pickup_item_list[0].id == temp_route_node_list[k].delivery_item_list[-1].id:
+                    idx = k
+                    heap.pop(0)
+                    if not heap:
+                        k += 1
+                        break
+            k += 1
+
+    while k < len(temp_route_node_list):
+        if temp_route_node_list[k].delivery_item_list:
+            idx += 1
+        else:
+            break
+        k += 1
+
+    return idx
+
+def get_block_right_bound(temp_route_node_list: List[Node], i: int) -> int:
+    idx = -1
+
+    if temp_route_node_list[i].delivery_item_list:
+        return idx
+    else:
+        order_item0_id = temp_route_node_list[i].pickup_item_list[0].id
+        for k in range(i + 1, len(temp_route_node_list)):
+            if temp_route_node_list[k].delivery_item_list:
+                d_len = len(temp_route_node_list[k].delivery_item_list)
+                if order_item0_id == temp_route_node_list[k].delivery_item_list[-1].id:
+                    idx = k
+                    break
+
+    return idx
+
+def get_first_p_node_idx(p_and_d_node_map: Dict[str, Node]) -> int:
+    first_key = next(iter(p_and_d_node_map)) 
+    p_len = len(p_and_d_node_map) // 2
+    first_p_node_idx = int(first_key.split(",")[1]) - p_len + 1
+    return first_p_node_idx
+
+def reverse_route(temp_node_list : List[Node] , begin_pos : int , end_pos: int , vehicle: Vehicle) -> List[Node]:
+    ongoing_super_node : Dict[int, Dict[str , Node]]= {}
+    vehicleID = vehicle.id
+    ls_nodepair_num = 0
+    if temp_node_list and len(temp_node_list) > 0:
+        pickup_node_heap : List[Node] = []
+        pickup_node_idx_heap : List[int] = []
+        p_and_d_node_map : Dict[str , Node] = {}
+        idx = 0
+        before_P_factoryID = None
+        before_D_factoryID =None
+        before_P_node_idx = 0
+        before_D_node_idx = 0
+        for i in range(begin_pos , end_pos + 1):
+            node = temp_node_list[i]
+            if node.delivery_item_list and node.pickup_item_list:
+                print ("Exist combine node exception when LS" , file= sys.stderr)
+                sys.exit(0)
+        
+            heap_top_orderitem_ID = pickup_node_heap[0].pickup_item_list[0].id if pickup_node_heap else ""
+            if node.delivery_item_list:
+                D_len = len(node.delivery_item_list)
+                if node.delivery_item_list[-1].id == heap_top_orderitem_ID:
+                    pickup_node_key = f"{vehicleID},{pickup_node_idx_heap[0]}"
+                    delivery_node_key = f"{vehicleID},{i}"
+                    
+                    if len(p_and_d_node_map) >= 2:
+                        if (pickup_node_heap[0].id != before_P_factoryID or pickup_node_idx_heap[0] + 1 != before_P_node_idx \
+                            or node.id != before_D_factoryID or i-1 != before_D_node_idx):
+                            first_pickup_node_idx = get_first_p_node_idx(p_and_d_node_map)
+                            ongoing_super_node[first_pickup_node_idx] = p_and_d_node_map
+                            p_and_d_node_map.clear()
+                    p_and_d_node_map[pickup_node_key] = pickup_node_heap[0]
+                    p_and_d_node_map[delivery_node_key] = node
+                    before_P_factoryID = pickup_node_heap[0].id
+                    before_P_node_idx = pickup_node_idx_heap[0]
+                    before_D_factoryID = node.id
+                    before_D_node_idx = i
+                    pickup_node_heap.pop(0)
+                    pickup_node_idx_heap.pop(0)
+            if node.pickup_item_list:
+                pickup_node_heap.insert(0 , node)
+                pickup_node_idx_heap.insert(0 , i)
+                if p_and_d_node_map:
+                    first_pickup_node_idx = get_first_p_node_idx(p_and_d_node_map)
+                    ongoing_super_node[first_pickup_node_idx] = p_and_d_node_map
+                    p_and_d_node_map.clear()
+        if len(p_and_d_node_map) >= 2:
+            first_pickup_node_idx = get_first_p_node_idx(p_and_d_node_map)
+            ongoing_super_node[first_pickup_node_idx] = p_and_d_node_map
+    if  len(p_and_d_node_map) < 2:
+            return None
+        
+    sorted_map = sorted(ongoing_super_node.items(), key=lambda x: x[0])
+
+    # Xóa dữ liệu cũ và thêm dữ liệu đã sắp xếp lại vào unongoing_super_node
+    ongoing_super_node.clear()
+    for key, value in sorted_map:
+        ongoing_super_node[key] = value
+    
+    before_blockI = -1
+    before_blockJ = -1
+    block_map :Dict[str, List[Node]]= {}
+    for idx , pdg in ongoing_super_node.items():
+        pickup_node : Node = None
+        delivery_node : Node = None
+        node_list : List[Node]= []
+        pos_i = 0
+        pos_j = 0
+        dNum = len(pdg) // 2
+        index = 0
+        if pdg:
+            for v_and_pos_str , node in pdg.items():
+                v_and_pos_split = v_and_pos_str.split(",")
+                vehicle_id = v_and_pos_split[0]
+                pos = int(v_and_pos_split[1])
+
+                if index % 2 == 0:
+                    # "Pickup" node
+                    pos_i = pos
+                    pickup_node = node
+                    node_list.insert(0, pickup_node)  # Thêm vào đầu danh sách
+                    index += 1
+                else:
+                    # "Delivery" node
+                    pos_j = pos
+                    delivery_node = node
+                    node_list.append(delivery_node)  # Thêm vào cuối danh sách
+                    index += 1
+                    pos_j = pos_j - dNum + 1
+            if pos_i > before_blockJ:
+                for i in range(pos_i + dNum, pos_j):
+                    node_list.insert(i - pos_i, temp_node_list[i])  # Thêm các phần tử từ tempNodeList vào nodeList
+                key = f"{vehicle_id},{pos_i}+{pos_j + dNum - 1}"
+                block_map[key] = node_list
+                before_blockI = pos_i
+                before_blockJ = pos_j + dNum - 1
+    # Nếu không có đủ blockMap để xử lý, trả về None
+    if len(block_map) < 2:
+        return None
+
+    # Xây dựng resultNodeList từ blockMap và các phần tử còn lại trong tempNodeList
+    result_node_list = []
+
+    # Đảo ngược các phần tử trong blockMap
+    reverse_block_node_list = []
+    for block in block_map.values():
+        reverse_block_node_list = block + reverse_block_node_list
+
+    # Thêm phần tử từ tempNodeList trước beginPos
+    result_node_list.extend(temp_node_list[:begin_pos])
+
+    # Thêm các phần tử từ reverseBlockNodeList
+    result_node_list.extend(reverse_block_node_list)
+
+    # Thêm phần tử từ tempNodeList sau endPos
+    result_node_list.extend(temp_node_list[end_pos + 1:])
+
+    return result_node_list
+
+def merge_node(id_to_vehicle: Dict[str , Vehicle], vehicleid_to_plan: Dict[str, list[Node]]):
+    for vehicle_id, vehicle in id_to_vehicle.items():
+        origin_planned_route = vehicleid_to_plan.get(vehicle_id, [])
+
+        if origin_planned_route and len(origin_planned_route) > 0:
+            before_node = origin_planned_route[0]
+            i = 1  # Bắt đầu từ phần tử thứ 2
+            while i < len(origin_planned_route):
+                next_node = origin_planned_route[i]
+
+                if before_node.id == next_node.id:
+                    # Gộp danh sách pickupItemList
+                    if next_node.pickup_item_list :
+                        for orderitem in next_node.pickup_item_list:
+                            before_node.pickup_item_list.append(orderitem)  
+                    # Gộp danh sách deliveryItemList
+                    if next_node.delivery_item_list:
+                        for orderitem in next_node.delivery_item_list:
+                            before_node.delivery_item_list.append(orderitem)
+                    # Xóa phần tử trùng lặp
+                    origin_planned_route.pop(i)
+                else:
+                    before_node = next_node
+                    i += 1  # Chỉ tăng index khi không xóa phần tử
+        vehicleid_to_plan[vehicle_id] = origin_planned_route
+
+def Delaydispatch(id_to_vehicle: Dict[str , Vehicle], vehicleid_to_plan: Dict[str, list[Node]] , route_map: Dict[tuple , tuple]):
+    vehicle_num = len(id_to_vehicle)
+    slack_time = 0
+    emergency_index = [-1] * vehicle_num
+    dock_table : Dict[str , List[int]]= {} 
+    n = 0
+    curr_node = [0] * vehicle_num
+    curr_time = [0] * vehicle_num
+    n_node = [0] * vehicle_num
+    index = 0
+
+    for vehicle_id, vehicle in id_to_vehicle.items():
+        planned_route = vehicleid_to_plan.get(vehicle_id , [])
+        
+        if planned_route and len(planned_route) > 0:
+            curr_node[index] = 0
+            n_node[index] = len(planned_route)
+
+            if vehicle.des is None:
+                if vehicle.cur_factory_id == planned_route[0].id:
+                    curr_time[index] = vehicle.gps_update_time
+                else:
+                    dis_and_time = route_map.get((vehicle.cur_factory_id , planned_route[0].id))
+                    if dis_and_time is None:
+                        print(f"No distance found for route")
+                    else:
+                        curr_time[index] = vehicle.gps_update_time + int(dis_and_time[1])
+            else:
+                if vehicle.cur_factory_id and len(vehicle.cur_factory_id) > 0:
+                    if vehicle.cur_factory_id != planned_route[0].id:
+                        curr_time[index] = vehicle.leave_time_at_current_factory
+                        dis_and_time = route_map.get((vehicle.cur_factory_id , planned_route[0].id))
+                        if dis_and_time:
+                            curr_time[index] += int(dis_and_time[1])
+                    else:
+                        curr_time[index] = vehicle.leave_time_at_current_factory
+                else:
+                    curr_time[index] = vehicle.des.arrive_time
+            
+            n += 1
+        else:
+            curr_node[index] = math.inf
+            curr_time[index] = math.inf
+            n_node[index] = 0
+        index += 1
+    
+    flag = False
+    while n > 0:
+        min_t = math.inf
+        min_t2_vehicle_index = 0
+        t_true = min_t
+        idx = 0
+
+        # Tìm xe có thời gian nhỏ nhất
+        for i in range(vehicle_num):
+            if curr_time[i] < min_t:
+                min_t = curr_time[i]
+                min_t2_vehicle_index = i
+
+        min_t2_vehicle_id = f"V_{min_t2_vehicle_index + 1}"
+
+        min_t_node_list = vehicleid_to_plan.get(min_t2_vehicle_id)
+        min_t_node = min_t_node_list[curr_node[min_t2_vehicle_index]]
+
+        if min_t_node.delivery_item_list:
+            for order_item in min_t_node.delivery_item_list:
+                commit_complete_time = order_item.committed_completion_time
+                slack_time = commit_complete_time - min_t
+                if slack_time < SLACK_TIME_THRESHOLD:
+                    emergency_index[min_t2_vehicle_index] = curr_node[min_t2_vehicle_index]
+                    break
+
+        used_end_time = []
+        time_slots = dock_table.get(min_t_node.id, [])
+
+        for i in range(len(time_slots)):
+            time_slot = time_slots[i]
+            if time_slot[1] <= min_t:
+                time_slots.pop(i)
+            elif time_slot[0] <= min_t < time_slot[1]:
+                used_end_time.append(time_slot[1])
+            else:
+                print("------------ timeslot.start>minT--------------")
+
+        if len(used_end_time) < 6:
+            t_true = min_t
+        else:
+            flag = True
+            idx = len(used_end_time) - 6
+            used_end_time = sorted(used_end_time)
+            t_true = used_end_time[idx]
+
+        service_time = min_t_node_list[curr_node[min_t2_vehicle_index]].service_time
+        cur_factory_id = min_t_node_list[curr_node[min_t2_vehicle_index]].id
+        curr_node[min_t2_vehicle_index] += 1
+
+        while (curr_node[min_t2_vehicle_index] < n_node[min_t2_vehicle_index] and
+            cur_factory_id == min_t_node_list[curr_node[min_t2_vehicle_index]].id):
+
+            if min_t_node_list[curr_node[min_t2_vehicle_index]].delivery_item_list:
+                for order_item in min_t_node_list[curr_node[min_t2_vehicle_index]].delivery_item_list:
+                    commit_complete_time = order_item.committed_completion_time
+                    slack_time = commit_complete_time - min_t
+                    if slack_time < SLACK_TIME_THRESHOLD:
+                        emergency_index[min_t2_vehicle_index] = curr_node[min_t2_vehicle_index]
+                        break
+
+            service_time += min_t_node_list[curr_node[min_t2_vehicle_index]].service_time
+            curr_node[min_t2_vehicle_index] += 1
+
+        if curr_node[min_t2_vehicle_index] >= n_node[min_t2_vehicle_index]:
+            n -= 1
+            curr_node[min_t2_vehicle_index] = float('inf')
+            curr_time[min_t2_vehicle_index] = float('inf')
+            n_node[min_t2_vehicle_index] = 0
+        else:
+            dis_and_time = route_map.get((cur_factory_id , min_t_node_list[curr_node[min_t2_vehicle_index]].id))
+            time = int(dis_and_time[1])
+            curr_time[min_t2_vehicle_index] = t_true + APPROACHING_DOCK_TIME + service_time + time
+
+        tw = [min_t, t_true + APPROACHING_DOCK_TIME + service_time]
+        dock_table.setdefault(min_t_node.id, []).append(tw)
+    
+    idx = 0
+    for vehicleID , node_list in vehicleid_to_plan.items():
+        vehicle = id_to_vehicle.get(vehicleID)
+        
+        if node_list and (emergency_index[idx] > -1 or vehicle.carrying_items or vehicle.des):
+            delivery_item_list : List[OrderItem] = []
+            carrying_items_list = vehicle.carrying_items
+            if carrying_items_list:
+                i = len(carrying_items_list) - 1
+                while i >= 0:
+                    delivery_item_list.append(carrying_items_list[i])
+                    i -=1
+            
+            for k in range(len(node_list)):
+                if emergency_index[idx] <= -1:
+                    break
+                
+                node = node_list[k]
+                delivery_items = node.delivery_item_list
+                pickup_items = node.pickup_item_list
+                
+                if delivery_items and k <= emergency_index[idx]:
+                    for order_item in delivery_items:
+                        if not delivery_item_list or delivery_item_list[0].id != order_item.id:
+                            print("violate FILO.", file=sys.stderr)
+                        delivery_item_list.pop(0)
+                
+                if pickup_items and k <= emergency_index[idx]:
+                    for order_item in pickup_items:
+                        delivery_item_list.insert(0, order_item)
+
+            is_des_empty = True
+            if vehicle.des and len(delivery_item_list) == 0:
+                is_des_empty = False
+
+            e = emergency_index[idx]
+            if delivery_item_list or not is_des_empty:
+                for i in range(e + 1, len(node_list)):
+                    node = node_list[i]
+                    
+                    if node.delivery_item_list:
+                        for order_item in node.delivery_item_list:
+                            if order_item in delivery_item_list:
+                                delivery_item_list.remove(order_item)
+
+                    if node.pickup_item_list():
+                        for order_item in node.pickup_item_list():
+                            delivery_item_list.insert(0, order_item)
+
+                    emergency_index[idx] = i
+        idx += 1
+    return emergency_index
+
+
+def write_destination_json_to_file_with_delay_timme(vehicleid_to_destination : Dict[str , Node] , emergency_index: List[int] , id_to_vehicle: Dict[str , Vehicle] , input_directory: str):
+    result_json = {}
+    
+    for index , (vehicleID , des) in enumerate(vehicleid_to_destination.items()):
+        current_node = None
+        if emergency_index[index] > -1 or id_to_vehicle.get(vehicleID).des:
+            if des:
+                pickup_items = []
+                delivery_items = []
+                current_node ={}
+                
+                if des.pickup_item_list and len(des.pickup_item_list) > 0:
+                    for orderitem in des.pickup_item_list:
+                        pickup_items.append(orderitem.id)
+                        
+                if des.delivery_item_list and len(des.delivery_item_list) > 0:
+                    for orderitem in des.delivery_item_list:
+                        delivery_items.append(orderitem.id)
+                
+                current_node = {
+                    "factory_id": des.id,
+                    "lng": des.lng,
+                    "lat": des.lat,
+                    "delivery_item_list": delivery_items,
+                    "pickup_item_list": pickup_items,
+                    "arrive_time": des.arrive_time,
+                    "leave_time": des.leave_time
+                }
+        result_json[vehicleID] = current_node
+    
+    output_file = os.path.join(input_directory, "output_destination.json")
+
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+    # Ghi dữ liệu ra file JSON
+    try:
+        with open(output_file, "w", encoding="utf-8") as file:
+            json.dump(result_json, file, ensure_ascii=False, indent=4)
+    except IOError as e:
+        print(f"Lỗi khi ghi file JSON: {e}")
+        
+def write_route_json_to_file_with_delay_time(vehicleid_to_plan: Dict[str, list[Node]] ,  emergency_index: List[int] , id_to_vehicle: Dict[str , Vehicle] , input_directory: str):
+    result_json = {}
+    
+    for index , (vehicleID , nodelist) in enumerate(vehicleid_to_plan.items()):
+        vehicle_items = []
+        
+        if emergency_index[index] > -1:
+            if nodelist:
+                for i in range(0 ,emergency_index[index]):
+                    node  = nodelist[i]
+                    pickup_items = []
+                    delivery_items = []
+                    current_node ={}
+                    
+                    if node.pickup_item_list and len(node.pickup_item_list) > 0:
+                        for orderitem in node.pickup_item_list:
+                            pickup_items.append(orderitem.id)
+                            
+                    if node.delivery_item_list and len(node.delivery_item_list) > 0:
+                        for orderitem in node.delivery_item_list:
+                            delivery_items.append(orderitem.id)
+                    
+                    current_node = {
+                        "factory_id": node.id,
+                        "lng": node.lng,
+                        "lat": node.lat,
+                        "delivery_item_list": delivery_items,
+                        "pickup_item_list": pickup_items,
+                        "arrive_time": node.arrive_time,
+                        "leave_time": node.leave_time
+                    }
+                    vehicle_items.append(current_node)
+        result_json[vehicleID] = vehicle_items
+        
+    output_file = os.path.join(input_directory, "output_route.json")
+
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+    # Ghi dữ liệu ra file JSON
+    try:
+        with open(output_file, "w", encoding="utf-8") as file:
+            json.dump(result_json, file, ensure_ascii=False, indent=4)
+    except IOError as e:
+        print(f"Lỗi khi ghi file JSON: {e}")
+
+
+
+        

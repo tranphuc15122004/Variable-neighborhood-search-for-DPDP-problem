@@ -2,7 +2,7 @@ import csv
 import json
 import string
 import sys
-from typing import Dict
+from typing import Dict , List , Tuple
 from Object import Factory, Node, Vehicle, VehicleInfo, OrderItem, Destination
 import traceback
 import copy
@@ -28,9 +28,9 @@ def read_input_Factory_CSV() -> Dict[str , Factory]:
     return id2factory_map
 
 
-def read_input_Routemap_CSV() -> Dict[tuple[str , str] , tuple[str , str]]:
+def read_input_Routemap_CSV() -> Dict[Tuple[str , str] , Tuple[str , str]]:
     file_path = 'benchmark/route.csv'
-    Route_map : Dict[tuple[str , str] , tuple[str , str]] = {}
+    Route_map : Dict[Tuple[str , str] , Tuple[str , str]] = {}
     try:
         with open(file_path , mode= 'r' , encoding= 'utf-8-sig') as file:
             csv_reader = csv.reader(file)
@@ -45,10 +45,10 @@ def read_input_Routemap_CSV() -> Dict[tuple[str , str] , tuple[str , str]]:
         print (f"Error: {e}" , file= sys.stderr)
     return Route_map
 
-def read_csv() -> tuple[Dict[str, Factory], Dict[tuple[str , str], tuple[str , str]]]:
+def read_csv() -> Tuple[Dict[str, Factory], Dict[Tuple[str , str], Tuple[str , str]]]:
     return read_input_Factory_CSV() , read_input_Routemap_CSV()
 
-def read_json() -> tuple[Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem]]:
+def read_json() -> Tuple[Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem]]:
     id_to_unlocated_item = read_unlocated_item()
     id_to_ongoing_item = read_ongoing_item()
     id_allorder : Dict[str , OrderItem] = {}
@@ -151,7 +151,7 @@ def read_vehicleinfor(id_allorder: Dict[str ,OrderItem]) -> Dict[str , Vehicle]:
             id_to_vehicle[id] = temp
     return id_to_vehicle
 
-def Input() ->tuple[Dict[str, Factory], Dict[tuple[str , str], tuple[str , str]] ,Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem] ]:
+def Input() ->Tuple[Dict[str, Factory], Dict[Tuple[str , str], Tuple[str , str]] ,Dict[str , Vehicle], Dict[str , OrderItem], Dict[str , OrderItem], Dict[str , OrderItem] ]:
         id_to_factory , route_map =  read_csv()
         id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item  , id_allorder = read_json()
         return id_to_factory , route_map ,  id_to_vehicle , id_to_unlocated_item ,  id_to_ongoing_item , id_allorder
